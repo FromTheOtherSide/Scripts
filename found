@@ -1,0 +1,196 @@
+
+#!/bin/bash 
+#                                                   ___  ___  _  ___  ___ ___ 
+# Search for files via regex and move them to a    |__ \/ __|| || _ \/ __/ __| 
+# folder, files with the same name will be         / __/\__ \| |||_| | _/\__ \
+# numbered.										   \___/\___/|_||___/\___\___/ 
+# v2.0
+
+#----------------------------- DEFAULT PARAMETERS -----------------------------#
+
+declare loglvl outlvl 
+loglvl='debug'
+outlvl='debug'
+
+#---------------------------- CONSTANT PARAMETERS -----------------------------#
+
+readonly SCRIPT="${BASH_SOURCE[0]##*/}" 
+readonly SCRIPTPATH="$(dirname "$(realpath BASHSOURCE[0])")" 
+readonly DATE="$(date -Id)" 
+readonly TIME="$(date -Is)" 
+readonly MESSAGE_ID="$SCRIPT" 
+readonly FUNCTION='Initalize_Linux' 
+
+#-------------------------------- BEGIN USAGE ---------------------------------#
+
+usage() {
+	cat '' usagetxt <<-USAGE 
+	Move files to dest, automatically renaming original files there with 
+	the same name.
+	Usage: 
+	"$SCRIPT_NAME DEST FILE [ FILE .. ]
+	FILE	A regular expression(s) describing files to be moved to DEST. 
+	DEST    Destination directory.
+	-i
+	Use case insensitive matching.
+	'-P'
+     Never follow symbolic links (this is the default), except in the
+     case of the '-xtype' predicate.
+	'-L'
+     Always follow symbolic links, except in the case of the '-xtype'
+     predicate.
+	'-H'
+     Follow symbolic links specified in the list of files to search, or
+     which are otherwise specified on the command line.
+
+	USAGE
+	msg "$LINENO" "$usagetxt" 
+	
+	exit
+}
+
+#-------------------------- BEGIN LOGGING AND OUTPUT --------------------------#
+
+clr2code() {
+	local clrcode
+	case "$1" in                                                                 
+		none) clrcode='\e[0m' ;;                                                   
+		black) clrcode='\e[30m' ;;                                                      
+		red) clrcode='\e[31m' ;;                                                   
+		green) clrcode='\e[32m' ;;                                                 
+		brown) clrcode='\e[33m' ;;                                                 
+		blue) clrcode='\e[34m' ;;                                                  
+		purple) clrcode='\e[35m' ;;                                                
+		cyan) clrcode='\e[36m' ;;                                                  
+		lightgray) clrcode='\e[37m' ;;                                             
+		darkgray) clrcode='\e[1;30m' ;;                                            
+		yellow) clrcode='\e[1;33m' ;;                                              
+		lightpurple) clrcode='\e[1;35m' ;;                                         
+		*) printf 'ERROR on line %d\n' "$LINENO"; exit ;;                                          
+	esac
+	printf '%s' "$clrcode"
+}
+
+p2clr() {
+	local -i priorityclr
+	# Translate priority description into priority number
+	case "$1" in 
+		emerg) clr='red' ;;
+		alert) clr='red' ;;
+		crit) clr='red' ;;
+        err) clr='red' ;; 
+        warning) clr='yellow' ;;
+		notice) clr='orange' ;;
+        info) clr='green' ;;
+        debug) clr='none' ;;
+		*) echo "ERROR on lineLINENO "$1" is not a valid priority"; exit 1 ;;
+	esac
+	printf '%s' "$clr" 
+}
+
+plvl2code() {
+	local -i pcode
+	# Translate priority description into priority number
+	case "$1" in 
+		emerg) pcode=0 ;;
+		alert) pcode=1 ;;
+		crit) pcode=2 ;;
+        err) pcode=3 ;; 
+        warning) pcode=4 ;;
+		notice) pcode=5 ;;
+        info) pcode=6 ;;
+        debug) pcode=7 ;;
+		*) echo "ERROR on lineLINENO "$1" is not a valid priority"; exit 1 ;;
+	esac
+	printf '%s' "$pcode"
+}
+
+# Log message to systemd journal
+log_message() {
+	logger --journald<<-LOGENTRY
+		MESSAGE="$1"
+		MESSAGE_ID="$SCRIPT"
+		PRIORITY=$2
+		CODE_FILE="$SCRIPTPATH"
+		CODE_LINE=$3
+		CODE_FUNC="$FUNCTION"
+	LOGENTRY
+}                                                                                 
+
+# Route all messages to the user, journal, and/or user defined log file. 
+# TODO add user defined log file
+msg() {
+	local -i pcode code_line
+	local message priority premsg='' postmsg=''
+	
+	code_line="$1"
+	priority="$2"
+	shift 2
+	message=( "$*" )
+	pcode="$(plvl2code "$priority")"
+
+	if (( "$loglvlcode" >= "$pcode" )) ; then
+		log_message "$pcode" "$message" "$log_line"
+	fi
+
+	if (( "$outlvlcode" >= "$pcode" )) ; then
+		(( "$outlvlcode" >=4 )) && fd=1 || fd=2
+
+		# If FD is not a tty, disable clr output                                   
+		if [[ -t "$fd" ]]; then
+			clr="$(p2clr "$priority")"
+			premsg="$(clr2code "$clr")"
+			postmsg="$(clr2code 'none')"
+		fi
+
+		printf '%b%s%b\n' "$premsg" "${message[@]}" "$postmsg"  >&"$fd"        
+	fi
+
+}
+
+
+#----------------------------- BEGIN DEPENDENCIES -----------------------------#
+
+depends() {
+	declare -a dependencies=(
+		find
+		cp
+	)
+
+	for dependency in "${dependencies[@]}"; do
+		if ! hash "$dependency"; then
+			msg "$LINENO" notice "ERROR: Missingdependency, install it?"
+		fi
+	done
+}
+
+#------------------------------ BEGIN FUNCTIONS -------------------------------#
+
+declare patterns dest casesens='true' cmd 
+declare -a files
+
+# Build the find comman in this function
+gogetopts() {
+	while getopts "Sihxv:l:d:" opt; do
+		case "$opt" in
+			S) cmd=('-L' "${cmd[@]}");; # always follow symbolic lonks
+			i) casesens='false' ;;
+			d) dest="$OPTARG" ;;
+			v) outlvl="$OPTARG" ;;
+			l) loglvl="$OPTARG" ;;
+			x) set -x ;;
+			h) usage ;;
+		esac
+	done
+
+	shift $(( OPTIND - 1 ))
+	patterns=( "${@}" )
+
+	loglvlcode="$(plvl2code "$loglvl")"                                              
+	outlvlcode="$(plvl2code "$outlvl")"
+}
+
+
+#--------------------------------- BEGIN MAIN ---------------------------------#
+
+

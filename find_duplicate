@@ -1,0 +1,193 @@
+#!/bin/bash 
+#                                                   ___  ___  _  ___  ___ ___ 
+# Find duplicate files base on your choice of      |__ \/ __|| || _ \/ __/ __| 
+# file hash types. Process duplicate based on      / __/\__ \| |||_| | _/\__ \
+# rules.                                           \___/\___/|_||___/\___\___/ 
+# v.01
+
+#_____________________________ DEFAULT PARAMETERS _____________________________#
+
+declare log_level verbositiy_level 
+log_level='debug'
+verbosity_level='notice'
+
+#____________________________ CONSTANT PARAMETERS _____________________________#
+
+readonly SCRIPT SCRIPTPATH MESSAGE_ID FUNCTION DATE TIME 
+SCRIPT="${BASH_SOURCE[0]##*/}"
+SCRIPTPATH="$(dirname "$(realpath $BASHSOURCE[0])")"
+DATE="$(date -Id)" 
+TIME="$(date -Is)"
+MESSAGE_ID=ba0373e803834939989fa90b9b90fffa
+FUNCTION='Initalize_Linux'
+
+#________________________________ BEGIN USAGE _________________________________#
+
+usage() {
+	read -r -d '' usagetxt <<-USAGE 
+	Usage: 
+	"$SCRIPT" DIR [DIR] [-r] 
+	
+	USAGE
+	
+	msg "$usagetxt" 
+	
+	exit
+}
+
+#_________________________________ END USAGE __________________________________#
+
+
+
+#__________________________ BEGIN LOGGING AND OUTPUT __________________________#
+
+color_colorcode() {
+	local colorcode
+	case "$2" in                                                                 
+		none) colorcode='\e[0m' ;;                                                   
+		black) colorcode='\e[30m' ;;                                                      
+		red) colorcode='\e[31m' ;;                                                   
+		green) colorcode='\e[32m' ;;                                                 
+		brown) colorcode='\e[33m' ;;                                                 
+		blue) colorcode='\e[34m' ;;                                                  
+		purple) colorcode='\e[35m' ;;                                                
+		cyan) colorcode='\e[36m' ;;                                                  
+		lightgray) colorcode='\e[37m' ;;                                             
+		darkgray) colorcode='\e[1;30m' ;;                                            
+		yellow) colorcode='\e[1;33m' ;;                                              
+		lightpurple) colorcode='\e[1;35m' ;;                                         
+		*) err "ERROR $LINENO"; exit ;;                                          
+	esac
+	printf '%s' "$colorcode"
+}
+
+priority_color() {
+	local -i prioritycolor
+	# Translate priority description into priority number
+	case "$1" in 
+		emerg) color='red' ;;
+		alert) color='red' ;;
+		crit) color='red' ;;
+        err) color='red' ;; 
+        warning) color='yellow' ;;
+		notice) color='orange' ;;
+        info) color='green' ;;
+        debug) color='none' ;;
+		*) echo "ERROR on line $LINENO "$1" is not a valid priority"; exit 1 ;;
+	esac
+	printf '%s' "$color" 
+}
+
+priority_prioritycode() {
+	local -i prioritycode
+	# Translate priority description into priority number
+	case "$1" in 
+		emerg) prioritycode=0 ;;
+		alert) prioritycode=1 ;;
+		crit) prioritycode=2 ;;
+        err) prioritycode=3 ;; 
+        warning) prioritycode=4 ;;
+		notice) prioritycode=5 ;;
+        info) prioritycode=6 ;;
+        debug) prioritycode=7 ;;
+		*) echo "ERROR on line $LINENO "$1" is not a valid priority"; exit 1 ;;
+	esac
+	printf '%s' $prioritycode
+}
+
+# Log message to systemd journal
+log_message() {
+	logger --journald<<-LOGENTRY
+		MESSAGE="$1"
+		MESSAGE_ID="$SCRIPT"
+		PRIORITY=$2
+		CODE_FILE="$SCRIPTPATH"
+		CODE_LINE=$3
+		CODE_FUNC="$FUNCTION"
+	LOGENTRY
+}                                                                                 
+
+# Route all messages to the user, journal, and/or user defined log file. 
+# TODO add user defined log file
+msg() {
+	local -i prioritycode code_line
+	local message priority premsg='' postmsg=''
+	
+	message="$1"
+	priority="${2:-info}"
+	code_line="${3:-'not provided'}"
+	prioritycode="(priority_prioritycode "$2")"
+
+	if (( log_level >= prioritycode )) ; then
+		log_message $prioritycode "$message" "$log_line"
+	fi
+
+	if (( verbosity_level >= prioritycode )) ; then
+		(( priority_code >=4 )) && fd=1 || fd=2
+
+		# If FD is not a tty, disable color output                                   
+		if [[ -t "$fd" ]]; then
+			color="$(priority_color "$priority")"
+			premsg="$(color_colorcode "$color")"
+			postmsg="$(color_colorcode 'none')"
+		fi
+
+		printf '%b%s%b' "$premsg" "$message" "$postmsg"  >&"$fd"        
+	fi
+
+}
+
+#___________________________ END LOGGING AND OUTPUT ___________________________#
+
+
+#_____________________________ BEGIN DEPENDENCIES _____________________________#
+
+depends() {
+	declare -a dependencies=(
+		# jq
+	)
+
+	for dependency in "${dependencies[@]}"; do
+		if ! hash "$dependency"; then
+			msg notice "ERROR: Missing $dependency, install it?" $LINENO
+		fi
+	done
+}
+
+#______________________________ END DEPENDENCIES ______________________________#
+
+
+
+#______________________________ BEGIN FUNCTIONS _______________________________#
+
+go_getopts() {
+
+while getopts "h" opt; do
+    case "$opt" in
+	
+        * | h ) usage ;;
+    
+	esac
+done
+
+shift $((OPTIND -1))
+
+}
+
+
+# Chose a file from a menu
+filemenu(){
+  select fname in *
+  do
+    echo you picked $fname \($REPLY\)
+    break;
+  done
+}
+
+#_______________________________ END FUNCTIONS ________________________________#
+
+
+#_________________________________ BEGIN MAIN _________________________________#
+
+
+#__________________________________ END MAIN __________________________________#

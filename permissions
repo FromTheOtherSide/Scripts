@@ -1,0 +1,178 @@
+#!/bin/bash 
+#                                                   ___  ___  _  ___  ___ ___ 
+# Recusively apply secure file permissions to all  |__ \/ __|| || _ \/ __/ __| 
+# files in a data directory. Defaults are for      / __/\__ \| |||_| | _/\__ \
+# working on a home directory but any directory    \___/\___/|_||___/\___\___/ 
+# can be targeted. 
+# v1.02
+#
+
+#---------------------------- CONSTANT PARAMETERS -----------------------------#
+
+readonly SCRIPT="${BASH_SOURCE[0]##*/}" 
+readonly SCRIPTPATH="$(dirname "$(realpath BASHSOURCE[0])")" 
+readonly DATE="$(date -Id)" TIME="$(date -Is)" 
+
+# Error message function
+err() { tput setaf 1; printf 'ERROR: '; tput sgr0; printf '%s\n' "$1"; exit 1; }
+
+#-------------------------------- BEGIN USAGE ---------------------------------#
+
+usage() {
+cat <<-USAGE
+$SCRIPT [-X] [-D <PATH>] [<USER>] Update permissions of PATH with USER as owner.
+Update the permissions of the current user's home directory. An alternative
+owner or directory may be supplied. Each mode will set the owner and group for
+the directory and all subs and update the permissions of all directories to 0700
+and all files to 0600.
+
+-D	<PATH>	This mode will update PATH instead of $HOME.
+USER		Will operate on USER's home or make USER owner of PATH.
+-X			Files whith the user executable bit eneabled will be 0700.
+
+This script will not operate on these folders or their subfolders, atleast
+until I	can apply safe persmissions for them and update the script.
+/etc /boot /bin /dev /lib /lib64 /opt /run /sbin /srv /usr /var  
+USAGE
+exit $((0+$ret))
+}
+
+#------------------------------ GLOBAL PARAMETERS -----------------------------#
+
+#------------------------------ BEGIN FUNCTIONS -------------------------------#
+# getopts should validate arguments and set all params
+get_parameters() {i
+	declare X=false
+	while getopts "XD:H" opt; do
+		case "$opt" in
+			D) dir="$OPTARG"; shift ;;
+			X) X=true ;;
+			h|*) usage ;;
+		esac
+		shift
+	done
+	
+	user="${1:-$USER}"
+	
+	dir="${dir:-"$(getent passwd "$uname" | cut -d ':' -f 6)"}" \
+		|| err "error $uname does not exist"
+	
+	[[ ! -d "$dir" ]] && err "error $dir does not exist"
+	
+	printf '%s\n%s\n%s\n' "$dir" "$user" "$X"
+}
+
+
+
+msg() {
+	local text= fgcolor= bgcolor= style=
+	local -n color	
+	while getopts 'c:b:s:' opt; do
+		case "$opt" in
+			c) fgcolor="$OPTARG" ;;
+			b) bgcolor="$OPTARG" ;;
+			s) style="$OPTARG" ;;
+			*) err "Error on line $LINENO"
+		esac
+	done
+	shift $(( "$OPTIND" - 1 )); OPTIND=0
+	text="$@"
+
+	for color in fgcolor bgcolor; do
+		case "$color" in
+			black) color=0 ;;
+			red) color=1 ;;
+			green) color=2 ;;
+			yellow) color=3 ;;
+			blue) color=4 ;;
+			magenta) color=5 ;;
+			cyan) color=6 ;;
+			white) color=1 ;;
+			purple) color=53 ;;
+		esac
+	done
+
+	styles=( bold blink ul invis )
+	[[ ! "${styles[@]}"~="$style" ]] \
+		&& err " Line $LINENO style must be one of $@"
+	[[ "$style" = 'ul' ]] && style='smul'
+	[[ -n "$fgcolor" ]] && tput setaf "$fgcolor"
+	[[ -n "$bgcolor" ]] && tput setab "$bgcolor"
+	[[ -n "$style" ]] && tput "$style"
+		
+	printf '%b' "$text"
+
+	tput sgr0
+
+}
+
+umask_default() {
+	chmod -R a=,+rwX "$userdir"
+
+}
+
+check_parent(){
+	
+
+}	
+
+set_owner() {
+	chown -R $uname:$uname "$1"
+}
+
+set_perm() {
+	read
+	setfacl -b path/to/file
+	
+	find "$path" -type d -print0 | xargs -0 -I % chmod 0700 %
+	
+	if $X; then
+		find "$path" -not -type d -not -perm -100 -print0 | xargs -0 -I % chmod 0600 %
+		find "$path" -not -type d -perm -100 -print0 |xargs -0 -I % chmod 0700 %
+	else
+		find "$path" -not -type d -print0 | xargs -0 -I % chmod 0600 %	
+	fi
+}
+	
+
+set_perms_onepass() {
+
+if [[ -z "$path" ]]; then
+
+	for file in "$(find "$path" -print0)"; do
+		# clear any access control lists
+		setfacl -b "$file"
+		# if a directory, 0700
+		if [[ "$(stat -c '%F' "$file")" = 'directory' ]]; then
+			chmod 0700 "$file"
+			continue
+		fi
+		if $X; then
+			# if -X was used, preserve the user execute bit
+			if [[ "$(cut -c 4 "$file")" = 'x' ]]; then
+				chmod 0700 "$file" 
+			else
+				chmod 0600 "$file"
+			fi
+		else
+			# in not -X, set all files to 0600
+			chmod 0600 "$file"
+		fi
+	done
+fi
+}
+#--------------------------------- BEGIN MAIN ---------------------------------#
+
+
+set_perms_onepass "$(get_parameters "$@")"
+
+if $(valid_user $user;
+
+get_home_group
+if [[ -z "$path" ]]; them
+	path="$homedir"
+fi
+check_parent
+set_owner
+set_perms
+

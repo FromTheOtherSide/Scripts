@@ -1,0 +1,23 @@
+#!/bin/bash
+set +x    
+y=Y z=Z yz='y z' q=Q Q='p'    
+set -- a b -a -b $x $y $yz "q"    
+printf 'Positional Parameter Expansion'    
+printf '${*} Expands each parameter to a seperate word. Each word is subject to word splititng and filename expansion WHERE APPLICABLE.\n'
+printf '%s\n' ${*}    
+printf '\n"#{*}" Expands into a single word with the value of each positional parameter delimited by the first character of the 'IFS' special variable\n'         
+printf '%s\n' "${*}"    
+printf '\n${@} In contexts where word splitting is performed, expands each parameter to a seperate word. Each word is then subject to word splitting.\n'
+printf 'In contexts where word splitting is not performed, expands to a single word with each positional parameter separated by a space.\n'
+printf '%s\n' ${@}    
+printf '\n"${@}" In contexts where word splitting is performed, expands each parameter to a seperate word.\n'
+printf 'Each word is then expanded again as if double quoted.\n'    
+printf 'The expansion of the first parameter is joined with the beginning part of the original word.\n'
+printf 'The expansion of the last parameter is joined with the last part of the original word.\n'
+printf '%s\n' "${@}"
+
+exit
+
+
+
+

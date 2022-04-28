@@ -1,0 +1,4 @@
+dnf install livecd-tools
+
+livecd-iso-to-disk --format --reset-mbr --home-size-mb 10000 --overlay-size-mb 10000 /mnt/Fedora-Workstation-Live-x86_64-35-1.2.iso /dev/sdb
+

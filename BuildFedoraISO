@@ -1,0 +1,225 @@
+#!/bin/bash
+# This script creates a bootable Fedora live usb
+# Performs smallest ops first to fail fast
+declare USBDEV TEMPDIR DISTRO ISOLINK DIGESTLINK PGPKEYLINK
+declare iso_name release_name hash
+
+while getopts 'i:d:s:S:' opt; do
+	case "$opt" in
+		-i) IMAGELINK="$OPTARG" ;;
+		-d) DIGESTLINK="$OPTARG" ;;
+		-s) SIGLINK="$OPTARG" ;;
+		-S) SIGNEDFILE="$OPTARG" ;;
+		-*) exit
+	esac
+done
+
+
+TAILS='false'
+
+if [[ $TAILS = 'true' ]]; then
+	ISOLINK='https://tails.ybti.net/tails/stable/tails-amd64-4.29/tails-amd64-4.29.img'
+	PGPKEYLINK='https://tails.boum.org/tails-signing.key'
+	PGPSIG='https://tails.boum.org/torrents/files/tails-amd64-4.29.img.sig'
+fi
+
+rm -rdf '/home/otherside/Downloads/Fedora'
+mkdir '/home/otherside/Downloads/Fedora'
+
+USBDEV="$1"
+TEMPDIR='/home/otherside/Downloads/Fedora'    
+cd "$TEMPDIR"
+
+DISTRO='Fedora_35_Workstation'
+ISOLINK='https://download.fedoraproject.org/pub/fedora/linux/releases/35/Workstation/x86_64/iso/Fedora-Workstation-Live-x86_64-35-1.2.iso'
+DIGESTLINK='https://getfedora.org/static/checksums/35/iso/Fedora-Workstation-35-1.2-x86_64-CHECKSUM'
+PGPKEYLINK='https://getfedora.org/static/fedora.gpg'
+
+export GNUPGHOME="$(mkdir "${TEMPDIR}/gnupg")"
+gpgconf --reload gpg-agent
+pkill -e -SIGKILL curl
+
+#TODO Fix this
+release_name='Fedora-Workstation-Live-x86_64-35-1.2'
+
+dl_digest() {
+	printf 'Downloading digest from:\n%s\n\n' "$DIGESTLINK"
+	curl -o "${TEMPDIR}/${release_name}.digest" "$DIGESTLINK"
+	if [[ "$?" -eq 0 ]]; then
+		printf '\nDigest download complete\n\n' 
+	else
+		printf '\nDigest download failed\n\n' 
+		exit 1
+	fi
+}
+
+dl_pgpkey() {
+	printf 'Downloading PGP key from:\n%s\n\n' "$PGPKEYLINK"
+	curl \
+		--progress-bar \
+		-o "${TEMPDIR}/${release_name}.keyring" \
+		"$PGPKEYLINK"
+	if [[ "$?" -eq 0 ]]; then
+		printf '\nPGP key download complete\n\n'
+	else
+		printf '\nDigest download failed\n\n'
+		exit 1
+	fi
+}
+
+verify_digest() {
+	printf 'Verifying digest:\n%s\n\n' "${TEMPDIR}/${release_name}.digest"
+	printf 'Using keyring:\n%s\n\n' "${TEMPDIR}/${release_name}.keyring"
+	gpg --import "${TEMPDIR}/${release_name}.keyring" 
+	gpg --verify "${TEMPDIR}/${release_name}.digest" \
+			&& printf '\nDigest verification complete\n\n' \
+			|| { printf '\nDigest verification failed\n\n'; exit 2; }
+}
+
+dl_iso() {
+	printf 'Downloading Image from\n%s\n\n' "$ISOLINK"
+	whoami
+	
+	curl \
+		--location \
+		--output-dir "$TEMPDIR" \
+		-O \
+		"$ISOLINK"
+
+	if [[ "$?" -eq 0 ]]; then
+		printf '\nISO Download Complete\n\n'
+	else
+		echo '\nERROR: ISO download failed\n\n'
+		exit
+	fi
+
+
+	if [[ "$(find "${TEMPDIR}" -type f | wc -l)" -eq 0 ]]; then
+		echo 'iso not present!!'
+	else
+		iso_name="$(ls -S "$TEMPDIR" | head -n 1)"
+	fi
+
+	# release_name="${iso_name%.iso}"
+}
+
+verify_iso() {
+	printf 'Verifying iso:\n%s\n\n' "${TEMPDIR}/${iso_name}"       
+    printf 'Using digest:\n%s\n\n' "${TEMPDIR}/${release_name}.digest" 
+	if grep -qE '[[:xdigit:]]{128}' "${TEMPDIR}/${release_name}.digest"; then
+		hash="$(grep "$release_name" "${TEMPDIR}/${release_name}.digest" \
+			| grep -oE '[[:xdigit:]]{128}')"
+		sha512sum --ignore-missing -c "${TEMPDIR}/${release_name}.digest" \
+			&& printf '\nISO verification succeeded\n\n' \
+			|| { printf '\nISO verification failed\n\n'; exit 3; }
+	elif grep -qE '[[:xdigit:]]{64}' "${TEMPDIR}/${release_name}.digest"; then
+		hash="$(grep "$release_name" "${TEMPDIR}/${release_name}.digest" | grep -oE '[[:xdigit:]]{64}')"
+		sha256sum --ignore-missing -c "${TEMPDIR}/${release_name}.digest" \
+		    && printf '\nISO verification succeeded\n\n' \
+            || { printf '\nISO verification failed\n\n'; exit 3; }
+	else
+		printf 'Hash type could not be determined'
+		exit 4
+	fi
+}
+
+create_usb() {
+	printf 'Creating USB:\n%s\n\n' "$USBDEV"                     
+    printf 'Using ISO:\n%s\n\n' "${TEMPDIR}/${iso_name}"
+	dd \
+		if="${TEMPDIR}/${iso_name}" \
+		of="$USBDEV" \
+		oflag=sync \
+		bs=16M \
+		status=noxfer \
+			&& printf '\nUSB creation succeeded\n\n' \
+            || { printf '\nUSB creation failed\n\n'; exit 5; }
+
+}
+
+verify_usb() {
+	local -i isosize="$(stat --printf '%s' "${TEMPDIR}/${iso_name}")"
+	
+	printf 'Verifying USB:\n%s\n' "$USBDEV"                                     
+    printf 'Using Hash:\n%s\n' "$hash"
+    printf 'And ISO Filesize:\n%s\n\n' "${isosize}B" 
+	if [[ ${#hash} -eq 128 ]]; then
+		usb_digest="$(head --silent --bytes="${isosize}" "$USBDEV" | 
+			sha512sum |
+			grep -Eo '^[[:xdigit:]]{128}')"
+	elif [[ ${#hash} -eq 64 ]]; then                                              
+        usb_digest="$(head --silent --bytes="${isosize}" "$USBDEV" | 
+			sha256sum | 
+			grep -Eo '^[[:xdigit:]]{64}')"
+	fi
+	
+	printf 'USB digest:\n%s\n' "$usb_digest"
+	printf 'Digest per digest files:\n%s\n\n' "$hash"
+	if [[ "0x$usb_digest" -eq "0x$hash" ]]; then
+		echo 'USB Verification Succeeded'
+	else
+		echo 'USB Verification Failed'
+		exit 6
+	fi
+}
+
+
+# Hashed file, if there is one, has to be the image
+# signed file of there is a hash, must be the digest
+# if [[ "$DIGESTLINK" ]]; then
+#	dl_digest
+#	if [[ "$SIGLINK ]]; then
+#		dl_sig
+#		verify_sig sig dgst
+#		if [[ "$KEYLINK" ]]; then
+#			dl_keyfile
+#			verify_owner key sig
+#		fi
+#	
+
+dl_digest
+dl_pgpkey
+
+
+if [[ -f "$SIGNEDFILE" ]]; then
+	verify_file_sig $SIGNATURE $SIGNEDFILE
+fi
+
+if [[ -f "$HASHEDFILE" ]]; then
+	verify_file_hash $DIGEST $HASHEDFILE
+fi
+
+if [[ -f "$SIGNATURE" ]]; then
+	verify_signature $OWNER $SIGNATURE
+fi
+
+verify_digest
+dl_iso
+verify_iso
+create_usb
+verify_usb
+# verify_file_hash file digest
+# verify_file_sig file(image or digest) sig
+# verify sig_owner sigfile(signed file or detatched) keyring
+#
+# Scenario 0
+# Image
+# 
+# Scenario 1:
+# Image
+# Digest
+#
+# Scenario 2:
+# Image
+# Signature
+# Key
+#
+# Scenario 3:
+# Image
+# Digest
+# Signature
+# Key
+
+
+
+gpg options

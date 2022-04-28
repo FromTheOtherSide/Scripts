@@ -1,0 +1,17 @@
+#!/bin/bash
+
+# Test if the Nth bit of X is 'on'.
+# Example
+# Test bit 2 in the octal digit 0775
+# bitwise shift 1 (bit - 1); logical and with x; if 0, bit is 0 else bit is 1  
+# bit=( ( 1 << ( N - 1 ) ) & 0775 )
+# bit=0
+# in permission 775, bit 2 is other=read 
+
+declare -i x n bit
+x=$(printf '%d\n' "$(($1))")
+n="$2"
+
+bit=$(( (1<<(n-1))&x ))
+
+

@@ -1,0 +1,135 @@
+#!/bin/bash
+# git_import_dotfiles v1.0
+#---------------------------------- DEFAULTS ----------------------------------#
+
+dotfiles_repo_local_d='/home/otherside/Repos/owned/dots'
+
+dotfiles_repo_github_d='git@github.com:FromTheOtherSide/dotfiles.git'
+
+:
+usage() {
+	echo <<-USAGE
+	This script initialized a bare repo for tracking dotfiles. If you already
+	Have such a repo, it download the files to a fresh install.
+	$0 [-h] Show this message
+	$0 -N <DIR> Create a new repo for tracking dotfiles
+	$0 -C <URL> Clone and checkout an existing repo
+	DIR/URL	Used 'D' for program defaults
+	dotfiles_repo_local='/home/otherside/Repos/owned/dots'                       
+    dotfiles_repo_github='git@github.com:FromTheOtherSide/dotfiles.git' 
+	USAGE
+	
+	exit
+}
+
+new='false'
+clone='false'
+gogetopts() {
+while getopts 'hN:C:' opt; do
+	case "$opt"  in
+		N) 
+			[[ "$clone"='true' ]] && { 'Select -C or -N, not both'; USAGE; }
+			new='true'
+			if [[ "$OPTARG"=='D' ]]; then
+				dotfiles_repo_local="$dotfiles_repo_local_d"
+			else
+				dotfiles_repo_local="$OPTARG" 
+			fi
+			;;
+		C) 
+			[[ "$new"='true' ]] && { 'Select -C or -N, not both'; USAGE; } 
+			clone='true'
+			if [[ "$OPTARG"=='D' ]]; then                                        
+				dotfiles_repo_github="$dotfiles_repo_github_d"
+			else
+			dotfiles_repo_github="$OPTARG"
+				    fi
+            ;;
+		h) 
+			usage 
+			;;
+	esac
+done
+}
+
+dotfiles_alias() {
+	alias gitdots=/usr/bin/git \
+		--git-dotfiles_repo_local="$dotfiles_repo_local" \
+		--work-tree='$HOME'
+}
+
+gitdots() {                                                                      
+    /usr/bin/git \
+		--git-dotfiles_repo_local="$dotfiles_repo_local" \
+		--work-tree='$HOME' \
+		"$@"
+
+}   
+
+#------------------ SPECIFIC TO CREATING A NEW DOTFILES REPO ------------------#
+# Create a bare repo that will be used to track config files that live 
+# outside of the repo.
+new_repo() {
+	git init --bare "$dotfiles_repo_local"
+	# Clean up the status reports
+	gitdots config --local status.showUntrackedFiles no
+	# Enable repo control via an alias
+	cmd=(
+		echo
+		alias config=/usr/bin/git
+        "--git-dir=$dotfiles_repo_local"
+        "--work-tree=$HOME"
+	)
+
+	"${cmd[@]}" >> $HOME/.bashrc
+}
+
+#--------------- SPECIFIC TO DOWNLOADING EXISTING DOTFILES REPO ---------------#
+
+clone_repo() {
+	# Ignore the bare repo itself to prevent weird recusion issues 
+	echo "$dotfiles_repo_local" > "$HOME/.gitignore"
+
+	# Now clone your dotﬁles into a bare repository 
+	git clone --bare "$dotfiles_repo_github" "$dotfiles_repo_local"
+}
+
+# Use the stderror output from a checkout dry run to id and backup duplicates
+# Git checkout will error on existing files in the checkout path 
+# make a backup folder for preexisting files
+# Checkout the repo, placing the files all aroung the work-tree, any files
+# alreay there are moved to present-before-gitdots 
+# Complete the checkout gitdots checkout
+checkout() {	
+	mkdir -p present-before-gitdots
+	
+	gitdots checkout 2>&1 | egrep "\s+\." | awk {'print $1'} | xargs -I{} mv {} present-before-gitdots/{}
+	
+	gitdots checkout 
+
+	if [[ "$?" -ne 0 ]]; then
+		echo 'There seem to be duplicate files that cannot be moved to the
+		backup file'
+	fi
+	
+	echo 'Look for these duplicates'
+	
+	ls "$HOME/present-before-gitdots"
+}
+
+# General
+settings
+dotfiles_alias
+getdots
+
+# New Repository Only
+if [[ "$new"='true' ]]; then
+	new_repo
+fi
+
+# Download Repo Only
+if [[ "$clone"='true' ]]; then
+	clone_repo
+	checkout
+fi
+

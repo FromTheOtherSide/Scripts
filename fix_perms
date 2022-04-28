@@ -1,0 +1,121 @@
+#!/bin/bash 
+#                                                   ___  ___  _  ___  ___ ___ 
+# Recusively apply secure file permissions to all  |__ \/ __|| || _ \/ __/ __| 
+# files in a data directory. Defaults are for      / __/\__ \| |||_| | _/\__ \
+# working on a home directory but any directory    \___/\___/|_||___/\___\___/ 
+# can be targeted. 
+# v1.02
+#
+
+#---------------------------- CONSTANT PARAMETERS -----------------------------#
+
+readonly SCRIPT="${BASH_SOURCE[0]##*/}" 
+
+# Error message function
+
+#-------------------------------- BEGIN USAGE ---------------------------------#
+
+usage() {
+cat <<-USAGE
+$SCRIPT [-X] [-D <dir>] [<USER>] Update permissions of dir with USER as owner.
+Update the permissions of the current user's home directory. An alternative
+owner or directory may be supplied. Each mode will set the owner and group for
+the directory and all subs and update the permissions of all directories to 0700
+and all files to 0600.
+
+-D	<dir>	This mode will update dir instead of $HOME.
+USER		Will operate on USER's home or make USER owner of dir.
+-X			Files whith the user executable bit eneabled will be 0700.
+
+This script will not operate on these folders or their subfolders, atleast
+until I	can apply safe persmissions for them and update the script.
+/etc /boot /bin /dev /lib /lib64 /opt /run /sbin /srv /usr /var  
+USAGE
+exit $((0+$ret))
+}
+
+#------------------------------ GLOBAL PARAMETERS -----------------------------#
+declare dir user X
+#------------------------------ BEGIN FUNCTIONS -------------------------------#
+# getopts should validate arguments and set all params
+get_parameters() {
+	X=false
+	while getopts "dXD:H" opt; do
+		case "$opt" in
+			D) dir="$OPTARG"; shift ;;
+			X) X=true ;;
+			h|*) usage ;;
+			d) set x ;;
+		esac
+		shift
+	done
+	
+	user="${1:-$USER}"
+	
+	dir="${dir:-"$(getent passwd "$user" | cut -d ':' -f 6)"}" \
+		|| err "error $user does not exist"
+	
+	[[ ! -d "$dir" ]] && err "error $dir does not exist"
+	
+}
+
+
+umask_default() {
+	chmod -R a=,+rwX "$userdir"
+
+}
+
+ensure_parent_perms(){
+local dir="$1" 
+while [[ "${#dir}" -gt 1 ]]; do
+	homedir="${dir:-"$(getent passwd "$user" | cut -d ':' -f 6)"}" 
+	group="${dir:-"$(getent passwd "$user" | cut -d ':' -f 4)"}" 
+	
+	if [[ $(stat -c '%U') = "$user" ]]; then
+		chmod u+x
+		continue
+	elif [[ $(stat -c '%G') = "$group" ]]; then 
+		chmod g+x "$dir"
+		continue
+	else 
+		if [[ ! $(stat -c '%U') = "$user" ]] && [[ ! $(stat -c 'G') = "$homedir" ]]; then
+			chmod o+x "$dir"
+			continue
+		fi
+	fi
+done
+}
+
+set_perms_onepass() {
+	chown -R $user:$user "$dir"
+	while read -r file; do
+		echo "$file"
+		# clear any access control lists
+		setfacl -b "$file"
+		# if a directory, 0700
+		if [[ "$(stat -c '%F' "$file")" = 'directory' ]]; then
+			chmod 0700 "$file"
+			continue
+		fi
+		if "$X"; then
+			# if -X was used, preserve the user execute bit
+			if [[ "$(cut -c 4 "$file")" = 'x' ]]; then
+				chmod 0700 "$file" 
+			else
+				chmod 0600 "$file"
+			fi
+		else
+			# in not -X, set all files to 0600
+			chmod 0600 "$file"
+		fi
+	done < <(find "$dir")
+}
+#--------------------------------- BEGIN MAIN ---------------------------------#
+
+get_parameters "$@"
+ensure_parent_perms
+set_perms_onepass
+
+
+
+

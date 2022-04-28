@@ -1,0 +1,29 @@
+#!/bin/bash
+# git_import_dotfiles v1.0
+#---------------------------------- DEFAULTS ----------------------------------#
+
+dotfiles_repo_local='/home/otherside/Repos/owned/dots'
+
+dotfiles_repo_github='git@github.com:FromTheOtherSide/dotfiles.git'
+
+echo "$dotfiles_repo_local" > "$HOME/.gitignore"
+
+git clone --bare "$dotfiles_repo_github" "$dotfiles_repo_local"
+
+mkdir -p present-before-gitdots
+
+gitdots checkout 2>&1 | egrep "\s+\." | awk {'print $1'} | xargs -I{} mv {} present-before-gitdots/{}
+
+gitdots checkout 
+
+if [[ "$?" -ne 0 ]]; then
+	echo 'There seem to be duplicate files that cannot be moved to the
+	backup file'
+fi
+
+echo 'Look for these duplicates'
+
+ls "$HOME/present-before-gitdots"
+/bin/bash: line 1: cmd: command not found
+
+

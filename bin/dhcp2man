@@ -1,0 +1,128 @@
+#!/bin/bash
+
+# switch between dhcp and manual ip via systemd-networkd config files
+declare SCRIPT
+SCRIPT=${0##*/}
+DEV='eth0'
+
+usage() {	
+	cat <<-USAGE
+	usage:
+	$SCRIPT      query Manual/DHCP mode status
+	$SCRIPT -D	apply a dhcp configuration to "$DEV"
+	$SCRIPT -M	apply a manual ip configuration to "$DEV"
+	$SCRIPT -h	show this usage summary
+	USAGE
+}
+
+
+declare ip dev mode testrun manipsrc manipdest
+mode= ip=  
+
+ip="$(ip address show dev eth0 | sed -n -E 's/.*inet\s(([0-9]{1,3}[\.]){3}[0-9]{1,3}\/[0-9]{1,2}).*/\1/p')"
+manipsrc='/home/otherside/dev/Config/etc/systemd/network/15-ETHERNET.network.d/15-ETHERNET_MANIP.conf'
+manipdest='/etc/systemd/network/15-ETHERNET.network.d/15-ETHERNET_MANIP.conf'
+
+while getopts 'hdDM' opt; do
+	case "$opt" in
+		d) debug='true'; set -x ;;
+		D) mode='DHCP' ;;
+		M) mode='Manual_IP' ;;
+		h) 
+			usage
+			exit 0 
+			;;
+		*) 
+			printf '%s\n\n' "error: invalid option on line $lineno"
+			usage
+			exit 1
+			;;
+	esac
+done
+
+if [[ -z "$mode" ]]; then 
+	if [[ -f "$manipdest" ]]; then
+
+		printf '\n%s\n' 'Manual IP Mode is Enabled' 
+	else
+		printf '\n%s\n' 'DHCP Mode is Enabled'
+	fi
+	exit 0
+fi
+
+if [[ "$(id -u)" -ne 0 ]]; then
+	printf '\n%s\n' 'This script must be ran as root'
+	exit 1
+fi
+
+printf 'This will apply %s mode, ok?\n' "$mode"
+select continue in Continue Exit; do
+	if [[ "$REPLY" = 'Exit' ]]; then
+		printf '%s\n\n' 'Exiting'
+	else
+		break
+	fi
+done
+
+if [[ -z "$ip" ]]; then
+	printf '%s\n\n' 'WARNING: Could not identify ip address'
+fi
+
+printf 'Current IP:%s\n' "$ip"
+printf 'Device %s\n\n' "$DEV"
+
+if [[ -n "$ip" ]]; then
+	printf '%s\n\n' 'deleting current ip'
+	ip address delete "$ip" dev "$DEV"
+fi
+
+printf '%s\n\n' 'stopping systemd-networkd.service'
+systemctl stop systemd-networkd.service
+
+# printf '%s\n\n' 'disabling network adapters'
+# find /sys/class/net/ -type l -printf '%p\0' | 
+# xargs -0 -i % -t ip link set % down
+
+if [[ "$mode" = 'Manual_IP' ]]; then
+	printf '%s\n\n' 'APPLYING MANUAL IP'
+	cp -f "$manipsrc" "$manipdest" && \
+		printf '%s\n\n' 'Sucessfully linked manual ip dropin' ||\
+		printf '%s\n\n' 'ERROR: failed to link manual ip dropin'
+elif [[ "$mode" = 'DHCP' ]]; then
+	printf '%s\n\n' 'APPLYING DHCP'
+	rm -f "$manipdest"
+	[[ ! -f "$manipdest" ]] && \
+		printf '%s\n\n' 'Sucessfully removed manual ip dropin' || \
+		printf '%s\n\n' 'ERROR: failed to remove mauail ip dropin'
+else
+	printf 'mode %s does not exist\n\n' "$mode"
+	exit 1
+fi
+
+printf '%s\n\n' 'Recursively applying permissions to /etc/systemd/network'
+chown -R root:root /etc/systemd/network
+chmod -R u=rw,g=,o=r /etc/systemd/network
+chmod -R u=rwX,g=,o=rX /etc/systemd/network
+
+printf '%s\n\n' 'enabling systemd-networkd.service'
+systemctl start systemd-networkd.service && sleep 2
+
+printf '%s\n\n' 'reloading network configuration'
+networkctl reload && sleep 2
+
+if [[ "$mode" = 'DHCP' ]]; then
+	printf '%s\n\n' 'renewing ip address'
+	networkctl renew "$DEV" && { sleep 2; printf 'ip address status:'; ip address show dev "$DEV"; }
+else
+	ip address show dev "$DEV"
+fi
+
+if [[ -f "$manipdest" ]]; then
+	printf '\n%s\n' 'Manual IP Mode is Enabled' 
+else
+	printf '\n%s\n' 'DHCP Mode is Enabled'
+fi
+
+unset ip dev mode DEV SCRIPT
+set +x
+

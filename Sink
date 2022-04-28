@@ -1,0 +1,69 @@
+#!/bin/bash 
+#                                                   ___  ___  _  ___  ___ ___ 
+# Send all my stuff, dot file. scripts, encrypted  |__ \/ __|| || _ \/ __/ __| 
+# passwords, etc. to the approporiate sink.        / __/\__ \| |||_| | _/\__ \
+#                    							   \___/\___/|_||___/\___\___/ 
+#     
+
+#----------------------------- DEFAULT PARAMETERS -----------------------------#
+# The directories inclused in git dots each need to be added recursively before
+$ commit to include any new files. 
+
+
+declare loglvl outlvl 
+loglvl='debug'
+outlvl='debug'
+
+#---------------------------- CONSTANT PARAMETERS -----------------------------#
+
+readonly SCRIPT="${BASH_SOURCE[0]##*/}" 
+readonly SCRIPTPATH="$(dirname "$(realpath BASHSOURCE[0])")" 
+readonly DATE="$(date -Id)" 
+readonly TIME="$(date -Is)" 
+readonly MESSAGE_ID="$SCRIPT" 
+readonly FUNCTION='Initalize_Linux' 
+
+#-------------------------------- BEGIN USAGE ---------------------------------#
+
+usage() {
+	$SCRIPT Sync | Add | 
+	
+
+	exit
+}
+
+#-------------------------- BEGIN LOGGING AND OUTPUT --------------------------#
+
+#----------------------------- BEGIN DEPENDENCIES -----------------------------#
+}
+
+#------------------------------ BEGIN FUNCTIONS -------------------------------#
+
+declare patterns dest casesens='true' cmd 
+declare -a files
+
+# Build the find comman in this function
+gogetopts() {
+	while getopts "Sihxv:l:d:" opt; do
+		case "$opt" in
+			S) cmd=('-L' "${cmd[@]}");; # always follow symbolic lonks
+			i) casesens='false' ;;
+			d) dest="$OPTARG" ;;
+			v) outlvl="$OPTARG" ;;
+			l) loglvl="$OPTARG" ;;
+			x) set -x ;;
+			h) usage ;;
+		esac
+	done
+
+	shift $(( OPTIND - 1 ))
+	patterns=( "${@}" )
+
+	loglvlcode="$(plvl2code "$loglvl")"                                              
+	outlvlcode="$(plvl2code "$outlvl")"
+}
+
+
+#--------------------------------- BEGIN MAIN ---------------------------------#
+
+

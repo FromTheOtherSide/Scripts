@@ -1,0 +1,22 @@
+#!/bin/bash
+
+# Print all files in a directory to the terminal, colorize the output.
+
+cl=( Colors 0-Black R-Red G-Green Y-Yellow B-Blue P-Purple C-Cyan W-White )
+st=( s-Std b-Bold d-Dim i-Italic u-Underline l-BlinkS L-BlinkF r-Rev h-Hide c-Cross )
+
+
+
+column --table < <(for c in {29..37}; do
+	cc=$((c-29))
+	for s in 0 1 2 3 4 5 6 2 8 9 10; do 
+		[[ $s -eq 0 ]] && printf '%s' ${cl[$cc]} && [[ $c -ne 29 ]] && continue 
+		[[ $c -eq 29 ]] && printf ' %s' ${st[$((s))]} && continue
+		printf ' %b' "\e[$((s-1));${c}m"
+		printf '%s' $(cut -d '-' -f 1 < <(echo ${cl[$cc]} ) )
+		printf '%s' $(cut -d '-' -f 1 < <(echo ${st[$s]} ) )
+		printf '%b' "\e[0m"
+	done
+	printf '\n'
+done)
+

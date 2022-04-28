@@ -1,0 +1,11 @@
+#!/bin/bash
+# convert a decimal number to binary:
+dectobin(){
+	local -i n dec 
+	local bin
+	dec=$(printf '%d\n' $(($1)))
+    for (( n="$dec"; n>0 ; n >>= 1 )); do bin=$((n&1))$bin; done
+    printf "%s\n" "$bin"
+}
+
+dectobin "$1"

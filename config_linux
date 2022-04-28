@@ -1,0 +1,328 @@
+#!/bin/bash 
+# Apply my desired configuration to a fresh       ___  ___  _  ___  ___ ___  #
+# install. This was tested on Fedora 36 but will |__ \/ __|| || _ \/ __/ __| #
+# likely work on other distros as well.          / __/\__ \| |||_| | _/\__ \ #
+#                                                \___/\___/|_||___/\___\___/ #
+#                                                                            #
+
+#---------------------------- CONFIGURE NETWORKING ----------------------------#
+
+# Disable all network adapters
+find /sys/class/net/ -type l -printf '%P\0' | 
+	xargs -0 -I % -t ip link set % down
+
+# Permanently Disable ipv6
+mkdir -p /etc/sysctl.d/            
+cat <<-IPV6DISABLE > /etc/sysctl.d/10-ipv6_disable.conf
+	net.ipv6.conf.all.disable_ipv6 = 1                                               
+	net.ipv6.conf.default.disable_ipv6 = 1                                           
+	net.ipv6.conf.lo.disable_policy = 1                                              
+IPV6DISABLE
+
+# Permanently Disable NetworkManager
+systemctl stop NetworkManager
+sleep 1
+systemctl disable NetworkManager
+sleep 1
+systemctl mask NetworkManager
+sleep 1
+
+# Configure systemd-networkd
+if [[ "$debug_network" == true ]]; then
+	echo "[Service]">/etc/systemd/system/systemd-networkd.service.d/10-debug.conf
+    echo "Environment=SYSTEMD_LOG_LEVEL=debug">>/etc/systemd/system/systemd-networkd.service.d/10-debug.conf
+fi
+
+cat <<-LINK > /etc/systemd/network/10_RANDOM_MAC.link
+	[Match]
+	OriginalName=*
+		
+	[Link]
+	MACAddressPolicy=random
+	WakeOnLan=off
+LINK
+
+cat <<-NETWORK > /etc/systemd/network/15-DHCP_DNSSEC.network
+	[Match]
+	Name=*
+
+	[Link]
+	Multicast=no
+	Unmanaged=No
+
+	[Network]
+	Description="Network Adapter Device"
+	DHCP=ipv4
+	DHCPServer=no
+	LinkLocalAddressing=No
+	IPv4LLRoute=No
+	LLMNR=false
+	MulticastDNS=False
+	DNSOverTLS=opportunistic
+	DNSSEC=yes
+	LLDP=no
+	IPForward=no
+	IPv6AcceptRA=false
+
+	[DHCPv4]
+	# Hostname=localhost
+	Anonymize=true
+	UseDNS=true
+	RoutesToDNS=true
+	UseNTP=true
+	RoutesToNTP=true
+	UseHostname=true
+NETWORK
+
+
+mkdir -p /etc/systemd/resolved.conf.d
+cat <<-RESOLVED > /etc/systemd/resolved.conf.d/10-Comcast_DNSSEC-DNSoverTLS.conf
+	[Resolve]
+	DNS=10.13.13.1
+	FallbackDNS=1.1.1.1 1.0.0.1 9.9.9.9
+	LLMNR=false
+	MulticastDNS=false
+	DNSSEC=true
+	DNSOverTLS=true
+	Cache=true
+	ReadEtcHosts=no
+	ResolveUnicastSingleLabel=false
+RESOLVED
+
+# Configure Firewall
+firewall-cmd --info-zone shieldsup &> /dev/null && 
+	{ echo 'deleting shieldsup zone'; sleep 1; firewall-cmd --permanent --delete-zone='shieldsup'; sleep 2; }
+
+echo 'creating new zone shieldsup'
+sleep 2
+
+firewall-cmd --permanent --new-zone='shieldsup'
+sleep 1
+
+firewall-cmd --permanent --zone=shieldsup --set-target=DROP
+sleep 1
+
+firewall-cmd --permanent --zone=shieldsup --set-description='Block all incoming, including icmp, except return traffic.'
+sleep 1
+
+firewall-cmd --permanent --zone=shieldsup --add-icmp-block-inversion
+sleep 1
+
+if [[ "$(firewall-cmd --get-default-zone)" != 'shieldsup' ]]; then
+	firewall-cmd --set-default-zone=shieldsup
+fi
+sleep 1
+
+# Create ipset containing $router mac                                            
+if firewall-cmd --permanent --info-ipset=r7000; then 
+	echo 'ipset r7000 exists, deleting it'
+	firewall-cmd --permanent --delete-ipset=r7000
+fi
+sleep 1
+
+echo 'firewall-cmd --permanent --new-ipset=r7000 --type=hash:mac'
+firewall-cmd --permanent --new-ipset=r7000 --type=hash:mac
+sleep 1
+
+firewall-cmd --permanent --ipset=r7000 --add-entry=a0:63:91:dd:c2:ae
+sleep 1
+                                                                                 
+# Create Rich Rule Only Accept DHCP from $router                                 
+firewall-cmd --zone=shieldsup --permanent --add-rich-rule='rule source NOT ipset=r7000 service name=dhcp drop'
+sleep 1
+
+# Add all interfaces to zone
+find /sys/class/net/ -type l -printf '%P\0' | 
+	xargs -0 -I % -t firewall-cmd --permanent --zone=shieldsup --add-interface=%
+sleep 1
+
+firewall-cmd --complete-reload
+sleep 2
+
+firewall-cmd --check-config
+sleep 1
+
+firewall-cmd --state
+
+# Enable systemd-networkd
+systemctl unmask systemd-networkd
+sleep 1
+
+systemctl enable systemd-networkd
+sleep 1
+
+systemctl start systemd-networkd
+sleep 2
+
+# Enable All Network Adapters
+find /sys/class/net/ -type l -printf '%P\0' | xargs -0 -I % -t ip link set % up
+
+#------------------------------- UPDATE SYSTEM --------------------------------#
+dnf upgrade -y
+
+
+
+
+#------------------------- BTRFS SNAPSHOTS WITH BTRBK -------------------------#
+BTRBK() {
+# Automount top level subvol 5 by adding it to fstab
+echo "UUID=$(btrfs filesystem show | grep -o '/dev/mapper.*' | grep -Eo '[[:digit:]].*') /btrfs_pool  btrfs  subvolid=5,compress=zstd:1,x-systemd.device-timeout=0 0 0" >> /etc/fstab
+
+# If using a SSD, optionally optimize
+# sed -i 's/compress=zstd:1/ssd,compress=zstd,discard=async/' /etc/fstab
+
+mkdir /btrfs_pool/_btrbk_snap
+dnf install -y btrbk
+
+# Write config file
+cat <<- 'BTRBKCONF' > /etc/btrbk/btrbk.conf
+	transaction_log         /var/log/btrbk.log
+	lockfile                /var/lock/btrbk.lock
+	timestamp_format        long
+
+	snapshot_dir            _btrbk_snap
+	snapshot_preserve_min   3h
+	snapshot_preserve       6h 5d 3w 1m
+
+	volume /btrfs_pool
+	  snapshot_create  always
+	  subvolume root
+	  subvolume home
+BTRBKCONF
+
+cat <<- 'BTRBKTIMER' > /lib/systemd/system/btrbk.timer
+	[Unit]
+	Description=btrbk hourly snapshots and backup
+
+	[Timer]
+	OnCalendar=hourly
+	AccuracySec=10min
+	Persistent=true
+
+	[Install]
+	WantedBy=multi-user.target
+BTRBKTIMER
+}
+
+#-------------------------- BTRFS SNAPSHOTS BACKUPS ---------------------------#
+btrfs() {
+# Parttion internal backup disk
+parted /dev/sda mklabel gpt
+parted /dev/sda mkpart primary 1MiB 100%
+parted /dev/sda name 1 BACKUP
+parted /dev/sda unit MiB print
+cryptsetup luksFormat /dev/sda1
+cryptsetup luksOpen /dev/sda1 cryptbackup
+mkfs.btrfs /dev/mapper/cryptbackup 
+mkdir /btrfs_backup
+echo "UUID=$(blkid -s UUID -o value /dev/mapper/cryptbackup)  /btrfs_backup  btrfs  subvolid=5,ssd,compress=zstd,discard=async,x-systemd.device-timeout=0,x-systemd.after=/   0 0" >> /etc/fstab
+echo "cryptbackup UUID=$(blkid -s UUID -o value /dev/sda1) none discard" >> /etc/crypttab
+
+# Regenerate dracut
+dracut --force --regenerate-all
+
+# update BTRBK config 
+cat <<- 'BTRBKBACKUP' > /lib/systemd/system/btrbk.timer
+	transaction_log         /var/log/btrbk.log
+	lockfile                /var/lock/btrbk.lock
+	timestamp_format        long
+
+	snapshot_dir            _btrbk_snap
+	snapshot_preserve_min   3h
+	snapshot_preserve       6h 5d 3w 1m
+	target_preserve_min     3h
+	target_preserve         24h 31d 52w
+
+	volume /btrfs_pool
+	  snapshot_create  always
+	  target send-receive /btrfs_backup
+	  subvolume root
+BTRBKBACKUP 
+
+# Enable BTRBK Service and timer
+systemctl start btrbk.service
+systemctl enable btrbk.timer
+
+systemctl daemon-reload
+systemctl list-timers --all
+}
+
+#---------------------------- DCONF USB AUTOMOUNT -----------------------------#
+
+# Disable USB Automount for all users
+cat <<- DCONFUSBAUTO > /etc/dconf/db/local.d/00-media-automount
+[org/gnome/desktop/media-handling]
+automount=false
+automount-open=false
+DCONFUSBAUTO
+
+dconf update
+
+
+#--------------------------------- SUBSYSTEMS ---------------------------------#
+
+#neovim
+#Boot Config
+#
+#Disk Mounting
+#
+#Encryption
+#
+#PAM/Authentication
+#
+#SELinux
+#
+
+#---------------------------------- PACKAGES ----------------------------------#
+
+## Remove
+#gnome-boxesaq
+#ModemManager
+#
+#
+## Install
+#wlQ-clipboard
+#rmlint
+#neovim
+#cd /
+#
+##----------------------------------- FILES ------------------------------------#
+## PRIMARY
+#/etc/systemd/network/15-DHCP_DNSSEC.network
+#/etc/systemd/network/10_RANDOM_MAC.link
+#/etc/fstab
+#/etc/crypttab
+#
+## Network
+#/etc/resolv.conf
+#/etc/systemd/resolved.conf
+#/etc/systemd/networkd.conf
+#
+#
+## Security
+#/etc/pam.d/
+#/etc/selinux/
+#/etc/sestatus.conf
+#/etc/shadow
+#/etc/shadow-
+#/etc/passwd
+#/etc/passwd-
+#/etc/sudoers
+#
+## System
+#/etc/chromy.conf
+#/etc/sysctl.conf
+#/etc/sysconfig/chronyd
+#/etc/sysconfig/firewalld
+#/etc/sysconfig/network
+#/etc/sysconfig/nftables.conf
+#/etc/sysconfig/sshd
+#/etc/sysconfig/wpa_supplicant
+#/etc/systemd/homed.conf
+#
+
+
+#
+## Disable ModemManager
+## Disable ipv6
+

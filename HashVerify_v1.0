@@ -1,0 +1,243 @@
+#!/bin/bash
+
+clear
+
+help(){
+	
+read -r usage<<-USAGE
+	Usage
+	Compare and verify the hash of a file against a digest, hash value, or the
+	hash of another file.
+	$0 [ -a ALGORITHM ] -F FILE -D DIGEST [ -i ]
+	$0 [ -a ALGORITHM ] -F FILE -H HASH 
+	$0 [ -a ALGORITHM ] -F FILE -f FILE
+
+	-i 		File name comparisons are to be case insensitive.
+
+	ALGORITHM 	The function used to compute the hash of FILE. Defaults to sha256
+			when omitted. 
+			Select from:
+			md5, sha1, sha256 (default), sha512
+
+	DIGEST		A text file containing a line with both the file name and
+			hash of FILE. The output of the coreutils shasum programs would
+			create a matching DIGEST. 
+
+	HASH		A hexidecimal string, optionally preceeded by '0x', 
+			representing the hash of FILE as computed with ALGORITHM. HASH
+			is represented numerically within $0 to eliminate any formatting
+			from comparison. 
+
+	HASH_FILE		The computed hash of FILE. More specifically, the integer returned 
+			as a result of applying the ALGORITHM function to FILE.
+
+	NAME_FILE		The base file name of FILE. NAME_FILE, along with all text in DIGEST,
+			are are converted to uppercase with the -i option resulting in
+			case insensitive matching. 
+
+	OPERATION DETAILS:
+
+	FILE to DIGEST
+	Returns 0 if HASH_FILE and NAME_FILE appear on the same line within DIGEST. Returns 1
+	no match found. if a HASH_FILE appears in DIGEST and a case insensitive only match of NAME_FILE is 
+	found in DIGEST, 0 if -i option is applied. Returns 2 
+
+	FILE to HASH
+	Returns 0 if HASH equals HASH_FILE, 1 otherwise.
+
+	FILE to FILE
+	Returns 0 if the hash values of each FILE are identical as computed
+	using ALGORITHM.
+USAGE
+}
+
+
+# defaults
+CaseSensitive='true'
+ALGORITHM='sha256' # Default hash algorith 
+
+declare -a algorithms
+algorithms=(
+	md5
+	sha1
+	sha256
+	sha512
+)
+
+
+declare -A algorithm_prop
+algorithms_prop=(
+	['md5len']=32
+	['sha1len']=40
+	['sha256len']=64
+	['sha512len']=128
+)
+
+while getopts hiA:F:f:D:H: opt
+do 
+	case $opt in
+		A) # Assign ALGORITHM
+			ALGORITHM="${OPTARG@L}" # convert supplied algorithm to lower case
+			if [[ ! "${algorithms[*]}" =~ $ALGORITHM ]]; then
+				printf 'ERROR: Invalid algorithm provided. Must be one of\n'
+				printf ${algorithms[*]}
+				exit 2
+			fi
+		;;
+		F) # Assign FILE
+			declare -i FILE_HASH
+			FILE="$OPTARG"
+			if [[ ! -f "$FILE" ]]; then
+				printf 'ERROR: $FILE not a regular file'
+				exit 100
+			fi
+		;;
+		f) # Assign FILE2 
+			declare -i FILE2_HASH
+			# Test if mutually exclusive options are used
+			if [[ -v "$DIGEST" ]] || [[ -v HASH ]]; then
+				printf 'Only one of -d DIGEST, -h HASH, or -F FILE2 may be assigned'
+				exit 3
+			fi
+			
+			FILE2="$OPTARG"
+
+			if [[ ! -f "$FILE" ]]; then
+				printf 'ERROR: $FILE not a regular file'
+				exit 100
+			fi
+		;;
+		D) # Assign DIGEST
+			# Test if mutually exclusive options are used
+			if [[ -v "$FILE2" ]] || [[ -v HASH ]]; then
+				printf 'Only one of -d DIGEST, -h HASH, or -F FILE2 may be assigned'
+				exit 3
+			fi
+
+			DIGEST="$OPTARG"
+			if [[ ! -f "$DIGEST" ]]; then
+				printf 'ERROR: $FILE not a regular file'
+				exit 100
+			fi
+		;;
+		H) # Assign HASH
+			# Test if mutually exclusive options are used
+			if [[ -v "$FILE2" ]] || [[ -v DIGEST ]]; then
+				printf 'Only one of -d DIGEST, -h HASH, or -F FILE2 may be assigned'
+				exit 3
+			fi
+
+
+			# Ensure HASH is 32 char min hexadecimal
+			if [[ ! "$HASH" =~ '^[[:xdigit:]]{32,}$' ]]; then
+				printf 'ERROR: HASH must be comprised only of a minimum of 32 hedadecimal \
+				characters optionally preceeded by 0x'
+				exit 100
+			fi
+			
+			# Automatically store hash a decimal integer by ensuring OPTARGS is always preceded by 0x and
+			# declaring HASH as an integer as long as a valid hex is is provided 
+			declare -i HASH=$([[ ! "$OPTARG" =~ ^0x[[:xdigit:]]*$ ]] && echo "0x$OPTARG" || echo "$OPTARG")
+			printf '%X' "$HASH"
+		;;
+		h) help
+			exit
+		;;
+		i) # Set case sensitive	off
+			CaseSensitive='false'
+			shopt -s 'nocasematch'
+		;;
+		*) # got to help
+			help
+			exit 1
+		;;
+	esac
+done
+
+
+determine_digest_type(){
+	local L=hash_length
+	if [[ -f "$digest" ]];then
+		if grep -iqE "^.*\s[0x]{0,1}[[:xdigit:]]{$L}\s.*$" "$digest"; then 
+			hash=$(grep -iqE "^.*\s[0x]{0,1}[[:xdigit:]]{$L}\s.*$" "$digest")
+		else
+			printf 'ERROR: No hexadecimal format hash of length $L in digest\n'
+			exit 2
+		fi
+	fi
+}
+
+Calc_Hash() {
+	local file="$1" alg="$2" hash
+	printf 'Calculating the %s hash of %s' "$2" "$1"
+	hash=$(printf '%s\n' "$(printf $(cat "$file" | "${alg}sum"))")
+	printf 'Hash Calculation Complete\n%s\n' "${hash@U}"
+}
+
+# Scenario 1 FILE to DIGEST
+FILEtoDIGEST() {
+	local fName fHash fNameRX fHashRX digest sCase 
+	local -i fNamePresent fHashPresent  
+
+	# FILE_basics
+	fName="$(basename $FILE)"
+	fNameRegEx="^.*\b${fName}\b.*$"
+
+	# Call function to calculate FILE hash with ALGORITHM
+	fHash="$(Calc_Hash "$FILE" "$ALGORITHM")"
+	fHashRegEx="^.*\b(0X)?${fHash}\b.*$"
+	
+
+	declare -a hash_grep_opts=( --ignore-case --only-matching --extended-regexp )
+
+	if [[ "$CaseSensitive" -eq 0 ]]; then
+		declare -a file_grep_opts=( --only-matching --extended-regexp )
+	else
+		declare -a file_grep_opts=( --ignore-case --only-matching --extended-regexp )
+	fi
+
+	# Check for fName in Digest
+	grep "${hash_grep_opts[@]}" "$fNameRegEx" "$DIGEST"; fNamePresent=$? 
+
+	# Check for hName in Digest; 
+	grep "${hash_grep_opts[@]}" "$fHashRegEx" "$DIGEST"; fHashPresent=$?
+	
+	# Check if they appear in the sameline
+	grep "${file_grep_opts[@]}" "$fNameRegEx" "$DIGEST" | grep "$hash_grep_opts" "$fHashRegEx"; MATCH=$?
+
+	if [[ -n "$fName" ]]; then
+		printf 'The base file name %b' "$fName"
+	fi
+
+	if [[ -n "$hHash" ]]; then
+		printf 'The file hash is %b' "$fHash"  
+	fi
+
+	if [[ "$fNamePresent" -eq 0 ]]
+	then
+		printf 'File Name was found in the Digest\n'
+	else
+		printf 'File Name was NOT found in the Digest\n'
+	fi
+
+	if [[ "$fHashPresent" -eq 0 ]]
+	then
+		printf 'File Hash WAS found in the digest.\n'
+	else
+		printf 'File Hash was NOT found in the digest.\n'
+	fi
+
+	if [[ "$MATCH" -eq 0 ]]
+	then
+		printf 'RESULT = PASS\n'
+	else
+		printf 'RESULT = FAIL\n'
+	fi
+
+	printf 'Have a nice time fucking yourself"
+	exit $MATCH
+
+}
+
+FILEtoDIGEST
+

@@ -1,0 +1,243 @@
+#!/bin/bash
+declare -i len=${1:-10} cnum= debug=0
+declare filter debug='false'
+scriptname="${0%%/*}"
+
+n=0
+t=0
+usage() {
+	cat<<-USAGE
+	Generate a high entropy random string, choose a lenth, apply filter and
+	perform fancy shit.
+
+	"$scriptname" -h | -d | [-e|-w|-b] <ARG> ] [ <LEN> ] -v
+	All printable ascii characters, as modified by the followinf filter, will 
+	be equally distributed throughout the string.
+
+	-d	: Filters out unacceptable ddwrt password characters (\'\`\")
+	-e  : ARG Is an extended regular expresion to which the entire passphrase
+			must match completely. Carefull as this can (prob will) drastically 
+			reduce entropy and increase gnereation time or cause an infinite 
+			loop if the regex only allows characters longer or shorter than the 
+			length. 
+	-w  : ARG is a whitelist of allowed characters and regex character classes.
+	-b  : ARG is a blacklist of excluded characters and regex character classes.
+	-v|-vv	: verbose output
+	LEN : String length, default 20 characters.
+	USAGE
+	
+	[[ -z "$filter" ]] && exit 1 || exit 0
+}
+
+
+while getopts 'hde:w:b:hv' opt; do
+	case "$opt" in
+		d) [[ -z "$filter" ]] \
+			&& filter='ddwrt' || \
+			{ echo 'One of -e,-w,-b,-d'; usage; } 
+			;;
+		e) [[ -z "$filter" ]] \
+			&& filter='regex' \
+			|| { echo 'One of -e,-w,-b,-d'; usage; } 
+			;;
+		w) [[ -z "$filter" ]] \
+			&& filter='wlist' \
+			|| { echo 'One of -e,-w,-b,-d'; usage; } 
+			;;
+		b) [[ -z "$filter" ]] \
+			&& filter='blist' \
+			|| { echo 'One of -e,-w,-b,-d'; usage; }
+			;;
+		v) ((debug++)) ;;
+		h) usage; exit 0 ;;
+		*) usage; exit 1 ;;
+
+	esac
+done
+
+shift "$(( $OPTIND -1 ))"
+len=$@
+
+[[ "$debug" -gt 0 ]] && printdbug='true'
+[[ "$debug" -gt 1 ]] && set -x
+
+dbug() {
+	if [[ "$printdbug"='true' ]]; then
+		printf '%s\n' "$1"
+	fi
+}
+
+
+digits=1    # 0-9
+lower=1     # 10-35
+upper=1     # 36-61
+special=1 # 62-73
+special2=0   # 74-93
+space=0     # 94
+
+unfiltered=$(( digits * lower * upper * special * special2 *space ))
+
+
+translate() {
+    local -i var="$1" 
+	local str=
+#    [[ $var -ge 0 ]] && [[ $var -le 9 ]] && [[ $digits -eq 0 ]] && return
+#    [[ $var -ge 10 ]] && [[ $var -le 35 ]] && [[ $lower -eq 0 ]] && return
+#    [[ $var -ge 36 ]] && [[ $var -le 61 ]] && [[ $upper -eq 0 ]] && return
+#    [[ $var -ge 62 ]] && [[ $var -le 73 ]] && [[ $special -eq 0 ]] && return
+#    [[ $var -ge 74 ]] && [[ $var -le 93 ]] && [[ $special2 -eq 0 ]] && return
+#    [[ $var -eq 94 ]] && [[ $space -eq 0 ]] && return
+    
+    #dbug "made it var=$var" 
+    
+    case $var in
+        0 ) str=\0 ;;
+        1 ) str=\1 ;;
+        2 ) str=\2 ;;
+        3 ) str=\3 ;;
+        4 ) str=\4 ;;
+        5 ) str=\5 ;;
+        6 ) str=\6 ;;
+        7 ) str=\7 ;;
+        8 ) str=\8 ;;
+        9 ) str=\9 ;;
+        10 ) str=\a ;;
+        11 ) str=\b ;;
+        12 ) str=\c ;;
+        13 ) str=\d ;;
+        14 ) str=\e ;;
+        15 ) str=\f ;;
+        16 ) str=\g ;;
+        17 ) str=\h ;;
+        18 ) str=\i ;;
+        19 ) str=\j ;;
+        20 ) str=\k ;;
+        21 ) str=\l ;;
+        22 ) str=\m ;;
+        23 ) str=\n ;;
+        24 ) str=\o ;;
+        25 ) str=\p ;;
+        26 ) str=\q ;;
+        27 ) str=\r ;;
+        28 ) str=\s ;;
+        29 ) str=\t ;;
+        30 ) str=\u ;;
+        31 ) str=\v ;;
+        32 ) str=\w ;;
+        33 ) str=\x ;;
+        34 ) str=\y ;;
+        35 ) str=\z ;;
+        36 ) str=\A ;;
+        37 ) str=\B ;;
+        38 ) str=\C ;;
+        39 ) str=\D ;;
+        40 ) str=\E ;;
+        41 ) str=\F ;;
+        42 ) str=\G ;;
+        43 ) str=\H ;;
+        44 ) str=\I ;;
+        45 ) str=\J ;;
+        46 ) str=\K ;;
+        47 ) str=\L ;;
+        48 ) str=\M ;;
+        49 ) str=\N ;;
+        50 ) str=\O ;;
+        51 ) str=\P ;;
+        52 ) str=\Q ;;
+        53 ) str=\R ;;
+        54 ) str=\S ;;
+        55 ) str=\T ;;
+        56 ) str=\U ;;
+        57 ) str=\V ;;
+        58 ) str=\W ;;
+        59 ) str=\X ;;
+        60 ) str=\Y ;;
+        61 ) str=\Z ;;
+        62 ) str=\` ;;
+        63 ) str=\~ ;;
+        64 ) str=\! ;;
+        65 ) str=\@ ;;
+        66 ) str=\# ;;
+        67 ) str=\$ ;;
+        68 ) str=\% ;;
+        69 ) str=\^ ;;
+        70 ) str=\& ;;
+        71 ) str=\* ;;
+        72 ) str=\( ;;
+        73 ) str=\) ;;
+        74 ) str=\- ;;
+        75 ) str=\_ ;;
+        76 ) str=\= ;;
+        77 ) str=\+ ;;
+        78 ) str=\[ ;;
+        79 ) str=\] ;;
+        80 ) str=\{ ;;
+        81 ) str=\} ;;
+        82 ) str=\\ ;;
+        83 ) str=\| ;;
+        84 ) str=\; ;;
+        85 ) str=\: ;;
+        86 ) str=\' ;;
+        87 ) str=\" ;;
+        88 ) str=\, ;;
+        89 ) str=\. ;;
+        90 ) str=\< ;;
+        91 ) str=\> ;;
+        92 ) str=\/ ;;
+        93 ) str=\? ;;
+        94 ) str=\  ;;
+        * ) str= ;;
+    esac
+    (( n++ ))
+
+    printf '%s' "$str"
+}
+
+
+filter() {
+	local char="$1"
+
+	case "$filter" in
+		(wlist | regex)
+			postchar="$(cat "$char" | grep -oE "$filter" )" 
+			;;
+		(blist)
+			postchar="$(cat "$char" | grep -voE "$filter" )" 
+			;;
+		(ddwrt)
+			postchar="$(cat "$char" | grep -oE "'" \
+				| grep -oE '"' | grep -oE '`')"  
+			;;
+		(*)
+			postchar="$char"
+			;;
+	esac
+	printf '%s' "$postchar"
+}
+
+
+while [[ $len -gt $n ]];do 
+	prestring=
+	cnum=
+	(( t++ ))
+
+    cnum=$(dd if=/dev/random bs=1 count=1 status='none' | od -A n -d)
+    dbug "cnum=$cnum"
+	prestring="$(translate "$cnum")"
+	dbug "prestring=$prestring"
+	dbug "string before $string"
+	string="$string$(filter "$prestring")"
+	dbug "string=$string"
+	dbug "len=$len n=$n"
+
+
+done
+
+dbug "It took %i tries to genereate %i truly random %s digits\n" "${t}" "${n}" "$([[ $unfiltered -eq 1 ]] && echo "unfilterd" || echo "filtered")"
+
+
+[[ "$(hash wl-copy &>/dev/null)" ]] \
+	&& printf '%s\n' "$cnum" | wl-copy \
+	|| printf '%s\n' "$cnum"
+
+

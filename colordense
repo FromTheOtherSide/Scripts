@@ -1,0 +1,14 @@
+#!/bin/bash     
+# Colorize output by specifying the msg, and fist letters of color and style
+# colorize txt CS 
+declare txt="$1" C=${2:0:1} S=${2:1:1}; echo "C=$C S=$S"
+cl=( Colors 0-Black R-Red G-Green Y-Yellow B-Blue P-Purple C-Cyan W-White )  #9       
+st=( s-Std b-Bold d-Dim i-Italic u-Uline l-Blk L-BlkF r-Rev h-Hide c-Cross ) #10
+declare -i cln=$((${#cl[@]}-1)) ssn=$((${#st[@]}-1))
+for cc in $(seq 0 $cln); do; y=$(echo ${cl[$cc]} | cut -d '-' -f 1)
+	[[ "$y" = $C ]] && c=$((cc+29)); done
+for ss in $(seq 0 $ssn); do; x=$( echo ${st[$ss]} | cut -d '-' -f 1) 
+	[[ "$x" = $S ]] && s="$ss"; done
+printf '%b%b%b' "\e[$c;${s}m" "$txt" "\e[0m"                         
+
+text here | sed s/here/

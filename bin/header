@@ -1,0 +1,241 @@
+#!/bin/bash
+
+# Create headers and banners for bash scripts.      ___  ___  _  ___  ___ ___  #
+# Create fold lines for vim scripts                |__ \/ __|| || _ \/ __/ __| #
+#                                                  / __/\__ \| |||_| | _/\__ \ #
+# v0.03                                            \___/\___/|_||___/\___\___/ #
+#______________________________ DEFAULT SETTINGS ______________________________#
+declare SCRIPT snd_l end_r spc_i spc_l spc_r char width spaces_i text align mode
+
+SCRIPT="${0##*/}"
+end_l='#'
+end_r='#'
+spc_i=' ' 
+spc_l=' '
+spc_r=' '
+char='_'
+width=80
+spaces_i=3
+text=''
+align='center'
+mode=( 'header' 'normal' 0 )  
+
+#___________________________________ USAGE ____________________________________#
+usage() {
+	cat <<-USAGE
+	
+	Print a header for each text argument. 
+	$SCRIPT -h 
+	$SCRIPT [ -s ] | [ -b ] [ -w WIDTH ] [ -c CHAR ] [ TEXT TEXT2 ... ]
+	
+	-h		: Show this usage summary.
+
+	-2		: Print two (2) headers for each argument, one with
+	prepended with 'begin', the other prepended with end.
+
+	-s		: Prints text wrapped to fit next to a signature within
+	WIDTH
+
+	-c CHAR		: Char will form the header row, '_' default.
+
+	-w WIDTH	: Header width in characters, eighty (80) default.
+
+	TEXT		: A header with TEXT string centered will be printed
+					for each argument. Include '' for a header with no text. 
+					Can come from STDIN.
+
+
+	Examples:
+	header -s '
+	Lorem ipsum     dotlor sit amet, consectetur adipiscing elit. Fusce   aliquet 
+    commodo libero, nec dapibus 
+    purus placerat  quis.
+	'
+
+	USAGE
+	exit 0
+}
+
+#_________________________________ FUNCTIONS __________________________________#
+go_getopts() {
+	# mode[0]=output mode[1]=normal/test mode[2]=verbosity
+	declare -g char mode text ispace
+	declare -ig width 
+
+	local -a args
+	while getopts 'w:c:f:a:2hbtv' opt; do
+		case "$opt" in
+			w) width="$OPTARG" ;;
+			c) char="$OPTARG" ;;
+			2) mode[0]='header_footer' ;;
+			a) align="$OPTARG" ;;
+			f) 
+				end_r="{{{$OPTARG"
+				align='right' 
+				spc_i=' '
+				end_l='"'
+				;; 
+			b) mode[0]='banner' ;;
+			t) mode[1]='test' ;;
+			v) mode[2]=$(( ${mode[2]} + 1 )) ;;
+			h) usage ;;
+		esac
+	done
+	shift $((OPTIND-1))
+
+	text=( "$@" )
+}
+
+n_chars() {
+	local -i count=${1:-0}
+	local c="$2"
+	#printf 'c="%s" count=%d\n' "$c" $count
+	for ((n=1;n<=$count;n++)); do
+		out="$out$c"
+	done
+	printf '%s' "$out"
+}
+
+print_header(){
+    local char_l char_r fill
+	local -a word
+	words=( "$@" )                                       
+	[[ $# -eq 0 ]] && words+=( '' )
+
+	for word in "${words[@]}"; do
+		_spc_i="$spc_i" char_l='' char_r=''
+
+		[[ -z $word ]] && _spc_i=''
+
+		case $align in
+			center)
+				fill=$(expr length "$end_l$char_l$_spc_i$word$_spc_i$char_r$end_r")
+				char_l="$(n_chars "$(( (width - fill)/ 2 ))" "$char" )"
+				fill=$(expr length "$end_l$char_l$_spc_i$word$_spc_i$char_r$end_r")
+				char_r="$(n_chars "$(( width - fill ))" "$char" )"
+				;;
+			right)
+				char_r=''
+				fill=$(expr length "$end_l$char_l$_spc_i$word$_spc_i$char_r$end_r")
+				char_r="$(n_chars "$(( width - fill ))" "$char" )"
+				;;
+			left)
+				char_l=''
+				fill=$(expr length "$end_l$char_l$_spc_i$word$_spc_i$char_r$end_r")
+				char_l="$(n_chars "$(( width - fill ))" "$char" )"
+				;;
+		esac
+
+		printf '%s\n' "$end_l$char_l$_spc_i$word$_spc_i$char_r$end_r"
+	done
+}
+
+# Based on caps of text, create capital, lowercase, or camel case header footer
+begin_end() {
+	unset text
+	for w in "$@"; do
+		U="${w@U}" L="${w@L}"
+		case "$w" in
+			U) 
+				text+="BEGIN $w"
+				text+="END $w" 
+				;;
+			L) 
+				text+="begin $w"
+				text+="end $w"
+				;;
+			*) 
+				text+=("Begin $w")
+				text+=("End $w")
+				;;
+		esac
+	done
+}
+
+# Format a multirow header with text alignned next to a signature
+# hash-space-text-space-space-signature-space-hash             
+banner() {
+	local long wide padtxt padsig
+	local -a foldcmd sig padtxtcmd padsigcmd sig1 final
+	local -i fill
+
+	if [[ ! "${mode[1]}" = 'test' ]]; then
+		
+		read -r -s 
+		text=( ${text[@]} $REPLY )
+
+	else
+		echo 'Test Mode Enabled'
+		# Test text
+		read -d '' -r text <<-TEXT
+		Lorem ipsum     dotlor sit amet, consectetur adipiscing elit. Fusce   aliquet 
+		commodo libero, nec dapibus 
+		purus placerat  quis.
+		TEXT
+		printf '%s' "$text"
+	fi
+
+	# The actual signaature
+	sig=(
+	' ___  ___  _  ___  ___ ___ ' 
+	'|__ \/ __|| || _ \/ __/ __|' 
+	'/ __/\__ \| |||_| | _/\__ \' 
+	'\___/\___/|_||___/\___\___/' 
+	)
+
+	# Get signature width
+	sig_w=0
+
+	ls=${#sig[@]}
+	for s in "${sig[@]}"; do
+		if [[ ${#s} -gt $sig_w ]]; then
+			sig_w=${#s}
+		fi
+	done
+
+	fill="$(expr length "$end_l$spc_l$spc_i$sig$spc_r$end_r")"
+
+
+	# Get remaining room for text
+	text_w=$(( width - fill ))
+
+	# Clean up text, replace new lines and tabs with spaces, squeeze spaces
+	text="$(printf '%s' "${text[*]}" | tr -s '[[:space:]]' ' ')"
+
+	# Wrap text rows array elements
+	text="$(printf '%s' "$text" | fold -c -s --width="$text_w" -)"
+	echo "$text"
+	readarray -t text < <(printf '%s' "$text")
+
+	# Determine total rows
+	if [[ "${#text[@]}" -gt "${#sig[@]}" ]]; then
+		rows="${#text[@]}"
+	else 
+		rows="${#sig[@]}"
+	fi
+	
+	for ((row=0;row<"$rows";row++)); do
+		textrow="${text["$row"]}"
+		fill=$(expr length "$end_l$spc_l${text[$row]}$spc_i${sig[$row]}$spc_r$end_r")
+		pad="$(n_chars $(( width-fill)) ' ')"
+
+		final+=("$end_l$spc_l${text["$row"]}$pad$spc_i${sig["$row"]}$spc_r$end_r")
+	done
+	printf '%s\n' "${final[@]}" 
+}
+
+#---------------------------------  MAIN  -------------------------------------#
+
+go_getopts "$@"
+
+[[ "${mode[2]}" -ge 1 ]] && set -x
+
+case "${mode[0]}" in
+	header)	print_header "${text[@]}" ;;
+	header_footer) begin_end "${text[@]}"; print_header "${text[@]}" ;;
+	banner) banner ;;
+	*) err "ERROR: invalid mode0: ${mode[0]}" ;;
+esac
+
+unset SCRIPT snd_l end_r spc_i spc_l spc_r char width spaces_i text align mode
+

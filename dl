@@ -1,0 +1,10 @@
+#!/bin/bash
+links="$(curl --silent --no-progress-meter "$1" | tidy -q | grep -Po 'https://((?!:).)*(.jpg|.mp4)' | sort -u)"
+tdir=$(mktemp -d)
+for i in $links; do
+    curl --silent --no-progress-meter --output-dir "$tdir" --remote-name --url "$i"
+done
+ls -1S "$tdir" | head -n 1 | xargs -i mv "${tdir}/{}" "$HOME/Pictures"
+rm -rd "$tdir"
+
+

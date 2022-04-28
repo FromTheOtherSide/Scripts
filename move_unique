@@ -1,0 +1,15 @@
+#!/bin/bash
+
+# Move only files unique to source directory to destination
+usage(){
+
+}
+
+declare -A files
+
+while read hash name
+do
+    files[$hash]=$name
+done < <(md5sum /path/to/source/*)
+
+cp "${files[@]}" /path/to/dest

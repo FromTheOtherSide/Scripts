@@ -26,31 +26,43 @@ usage() {
 	
 	Print a header for each text argument. 
 	$SCRIPT -h 
-	$SCRIPT [ -s ] | [ -b ] [ -w WIDTH ] [ -c CHAR ] [ TEXT TEXT2 ... ]
-	
+	$SCRIPT -s  -b
+	sscript	[-w WIDTH][ -c CHAR ][-A align]  [ TEXT TEXT2 ... ]
+				
 	-h		: Show this usage summary.
 
-	-2		: Print two (2) headers for each argument, one with
-	prepended with 'begin', the other prepended with end.
+	-2			Print two (2) headers for each argument, one with
+				prepended with 'begin', the other prepended with end.
 
-	-s		: Prints text wrapped to fit next to a signature within
-	WIDTH
+	-b			Print a banner with a signature on the right and text wrapped 
+				to fit next to the signature.
 
-	-c CHAR		: Char will form the header row, '_' default.
+	-l LEFT		The leftmost special character
+
+	-a ALIGN    Text alignment [L|left] | [R|right] | [C|center] 
+
+	-c CHAR		Char will form the header row, '_' default.
 
 	-w WIDTH	: Header width in characters, eighty (80) default.
 
 	TEXT		: A header with TEXT string centered will be printed
 					for each argument. Include '' for a header with no text. 
 					Can come from STDIN.
-
+	
+# Create headers and banners for bash scripts.      ___  ___  _  ___  ___ ___  #
+# Create fold lines for vim scripts                |__ \/ __|| || _ \/ __/ __| #
+#                                                  / __/\__ \| |||_| | _/\__ \ #
+# v0.03                                            \___/\___/|_||___/\___\___/ #
+#
 
 	Examples:
-	header -s '
+	header -b '
 	Lorem ipsum     dotlor sit amet, consectetur adipiscing elit. Fusce   aliquet 
     commodo libero, nec dapibus 
     purus placerat  quis.
 	'
+
+
 
 	USAGE
 	exit 0
@@ -63,18 +75,22 @@ go_getopts() {
 	declare -ig width 
 
 	local -a args
-	while getopts 'w:c:f:a:2hbtv' opt; do
+	while getopts 'l:w:c:f:a:2hbtv' opt; do
 		case "$opt" in
+			l) end_l="$OPTARG" ;;
 			w) width="$OPTARG" ;;
 			c) char="$OPTARG" ;;
 			2) mode[0]='header_footer' ;;
 			a) align="$OPTARG" ;;
 			f) 
 				end_r="{{{$OPTARG"
-				align='right' 
 				spc_i=' '
-				end_l='"'
-				;; 
+				;;
+			F) 
+				end_l="}}}$OPTARG"
+				spc_i=' '
+				;;
+
 			b) mode[0]='banner' ;;
 			t) mode[1]='test' ;;
 			v) mode[2]=$(( ${mode[2]} + 1 )) ;;
@@ -89,7 +105,6 @@ go_getopts() {
 n_chars() {
 	local -i count=${1:-0}
 	local c="$2"
-	#printf 'c="%s" count=%d\n' "$c" $count
 	for ((n=1;n<=$count;n++)); do
 		out="$out$c"
 	done
@@ -108,18 +123,18 @@ print_header(){
 		[[ -z $word ]] && _spc_i=''
 
 		case $align in
-			center)
+			center|C)
 				fill=$(expr length "$end_l$char_l$_spc_i$word$_spc_i$char_r$end_r")
 				char_l="$(n_chars "$(( (width - fill)/ 2 ))" "$char" )"
 				fill=$(expr length "$end_l$char_l$_spc_i$word$_spc_i$char_r$end_r")
 				char_r="$(n_chars "$(( width - fill ))" "$char" )"
 				;;
-			right)
+			right|R)
 				char_r=''
 				fill=$(expr length "$end_l$char_l$_spc_i$word$_spc_i$char_r$end_r")
 				char_r="$(n_chars "$(( width - fill ))" "$char" )"
 				;;
-			left)
+			left|L)
 				char_l=''
 				fill=$(expr length "$end_l$char_l$_spc_i$word$_spc_i$char_r$end_r")
 				char_l="$(n_chars "$(( width - fill ))" "$char" )"
@@ -152,6 +167,18 @@ begin_end() {
 	done
 }
 
+
+accept_input() {
+	if [[ $# -eq 0 ]]; then
+		while read -r -s; do
+			text+=( "$REPLY" )
+		done
+	else
+		text=( "$@" )
+	fi
+}
+
+
 # Format a multirow header with text alignned next to a signature
 # hash-space-text-space-space-signature-space-hash             
 banner() {
@@ -159,20 +186,16 @@ banner() {
 	local -a foldcmd sig padtxtcmd padsigcmd sig1 final
 	local -i fill
 
-	if [[ ! "${mode[1]}" = 'test' ]]; then
-		
-		read -r -s 
-		text=( ${text[@]} $REPLY )
-
-	else
+	if [[ "${mode[1]}" = 'test' ]]; then
 		echo 'Test Mode Enabled'
-		# Test text
 		read -d '' -r text <<-TEXT
-		Lorem ipsum     dotlor sit amet, consectetur adipiscing elit. Fusce   aliquet 
-		commodo libero, nec dapibus 
-		purus placerat  quis.
+			Lorem ipsum     dotlor sit amet, consectetur adipiscing elit. Fusce   aliquet 
+			commodo libero, nec dapibus 
+			purus placerat  quis.
 		TEXT
 		printf '%s' "$text"
+	else
+		accept_input
 	fi
 
 	# The actual signaature
@@ -193,7 +216,7 @@ banner() {
 		fi
 	done
 
-	fill="$(expr length "$end_l$spc_l$spc_i$sig$spc_r$end_r")"
+	filt="$(expr length "$end_l$spc_l$spc_i$sig$spc_r$end_r")"
 
 
 	# Get remaining room for text
@@ -204,8 +227,7 @@ banner() {
 
 	# Wrap text rows array elements
 	text="$(printf '%s' "$text" | fold -c -s --width="$text_w" -)"
-	echo "$text"
-	readarray -t text < <(printf '%s' "$text")
+	readarray -t text < <(printf '%s' "$text") 
 
 	# Determine total rows
 	if [[ "${#text[@]}" -gt "${#sig[@]}" ]]; then

@@ -12,6 +12,18 @@ declare -i x n bit
 x=$(printf '%d\n' "$(($1))")
 n="$2"
 
-bit=$(( (1<<(n-1))&x ))
 
+bit=$(( ( 1 << ( n - 1 ) ) & x ))
 
+if [[ $bit -gt 0 ]]; then
+  C='\033[96;1m'
+  a='IS'
+  c='\033[0m'
+  printf 'bit %d in %d %b%s%b set\n' "$N" "$x" "$C" "$a" "$c"
+else
+  C='\033[91;2m'
+  a='IS NOT'
+  c='\033[0m'
+printf 'bit %d in %d %b%s%b set\n' "$N" "$x" "$C" "$a" "$c"
+
+fi

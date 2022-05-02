@@ -259,6 +259,60 @@ DCONFUSBAUTO
 dconf update
 
 
+#____________________________ APPLICATION SETTINGS ____________________________#
+
+
+sudo dnf install opensc
+# Do not run the following lines as root, the config affect the current user
+mkdir -p ~/.config/pkcs11/module
+
+cp /usr/share/p11-kit/modules/opensc.module ~/.config/pkcs11/modules/
+
+echo "disable-in: firefox vivaldi-bin" >> ~/.config/pkcs11/modules/opensc.module
+
+cat ~/.config/pkcs11/modules/opensc.module
+
+
+# Config file for Referennce 
+#   # This file describes how to load the opensc module
+#   # See: https://p11-glue.github.io/p11-glue/p11-kit/manual/pkcs11-conf.html
+#   # or man pkcs11.conf
+#   
+#   # This is a relative path, which means it will be loaded from
+#   # the p11-kit default path which is usually $(libdir)/pkcs11.
+#   # Doing it this way allows for packagers to package opensc for
+#   # 32-bit and 64-bit and make them parallel installable
+#   module: opensc-pkcs11.so
+#   disable-in:  
+#   disable-in: firefox thunderbird
+
+
+#__________________ GIT INTITALIZATION - BARE REPOSITORY ___________________{{{1
+
+mkdir /home/otherside/Repos/owned/cfg
+
+git init --bare '/home/otherside/Repos/owned/cfg'
+
+alias cfg="git --git-dir=/home/otherside/Repos/owned/cfg --work-tree=/"
+
+cfg config --local status.showUntrackedFiles no
+root='/'
+
+echo "alias cfg='/usr/bin/git --git-dir=$HOME/Repos/owned/cfg \
+--work-tree=$root'" >> "$HOME/.bashrc.d/15-git_aliases.sh"
+
+cfg remote add origin 
+
+
+#_____________________ GIT CHECKOUT - BARE REPOSITORY ______________________{{{1
+
+
+
+
+
+
+#__________________________________ FILES __________________________________{{{1
+
 #--------------------------------- SUBSYSTEMS ---------------------------------#
 
 #neovim

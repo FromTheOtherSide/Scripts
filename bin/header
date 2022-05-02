@@ -4,9 +4,11 @@
 # Create fold lines for vim scripts                |__ \/ __|| || _ \/ __/ __| #
 #                                                  / __/\__ \| |||_| | _/\__ \ #
 # v0.03                                            \___/\___/|_||___/\___\___/ #
-#______________________________ DEFAULT SETTINGS ______________________________#
-declare SCRIPT snd_l end_r spc_i spc_l spc_r char width spaces_i text align mode
 
+
+#_________________________________ HEADER __________________________________{{{1
+declare SCRIPT snd_l end_r spc_i spc_l spc_r char width spaces_i text align mode
+declare verbosity _clr 
 SCRIPT="${0##*/}"
 end_l='#'
 end_r='#'
@@ -19,11 +21,12 @@ spaces_i=3
 text=''
 align='center'
 mode=( 'header' 'normal' 0 )  
+verbosity=4 # 0=Only User 1=err & lower 2=info & lower 3=warn & lower 4=debug
 
-#___________________________________ USAGE ____________________________________#
+
+#__________________________________ USAGE __________________________________{{{1
 usage() {
-	cat <<-USAGE
-	
+	cat <<-USAGE	
 	Print a header for each text argument. 
 	$SCRIPT -h 
 	$SCRIPT -s  -b
@@ -63,45 +66,64 @@ usage() {
 	'
 
 
-
 	USAGE
 	exit 0
 }
 
-#_________________________________ FUNCTIONS __________________________________#
-go_getopts() {
-	# mode[0]=output mode[1]=normal/test mode[2]=verbosity
+#_________________________________ GOPTS _________________________________{{{1
 	declare -g char mode text ispace
 	declare -ig width 
 
 	local -a args
-	while getopts 'l:w:c:f:a:2hbtv' opt; do
+	while getopt 'l:w:c:f:a:2hbtv' opt; do
 		case "$opt" in
-			l) end_l="$OPTARG" ;;
-			w) width="$OPTARG" ;;
-			c) char="$OPTARG" ;;
-			2) mode[0]='header_footer' ;;
+			2) mode='header_footer' ;;
 			a) align="$OPTARG" ;;
-			f) 
-				end_r="{{{$OPTARG"
-				spc_i=' '
-				;;
-			F) 
-				end_l="}}}$OPTARG"
-				spc_i=' '
-				;;
-
-			b) mode[0]='banner' ;;
-			t) mode[1]='test' ;;
-			v) mode[2]=$(( ${mode[2]} + 1 )) ;;
+			c) char="$OPTARG" ;;
+			f) mode='vimfold'
+				 end_r="{{{$OPTARG"
+				 spc_i=' '
+				 ;;
+			b|s) mode='banner' ;;
+			l) end_l="$OPTARG" ;;
+			m) mode="$OPTARG" ;;
+			t) test='true' ;;
+			v) ((verbosity++)) ;;
+			w) width="$OPTARG" ;;
 			h) usage ;;
 		esac
 	done
 	shift $((OPTIND-1))
 
 	text=( "$@" )
+
+
+
+msg() {
+	OPTIND=1
+	local mode mcode cc modecode
+	while getopts 'u:eiwd' opt; do
+		case "$opt" in
+			c) 
+				mode='user'; modecode=0; cc=Gb ;; 
+			e) 
+				mode='err'; modecode=1; cc=Rb ;;
+			i) 
+				mode='info'; modecode=2; cc=Wd ;;
+			w) 
+				mode='warn'; modecode=3; cc=Pl ;;
+			d)
+				mode='debug'; modecode=4; cc=Yd ;;
+		esac
+	done
+	
+	shift $(( OPTIND - 1))
+	if [[ $modecode -le $verbosity ]]; then
+		colors "$1" "$cc" "$2"
+	fi
 }
 
+#_________________________________ N_CHARS _________________________________{{{1
 n_chars() {
 	local -i count=${1:-0}
 	local c="$2"
@@ -111,8 +133,9 @@ n_chars() {
 	printf '%s' "$out"
 }
 
+#______________________________ PRINT_HEADER _______________________________{{{1
 print_header(){
-    local char_l char_r fill
+  local char_l char_r fill
 	local -a word
 	words=( "$@" )                                       
 	[[ $# -eq 0 ]] && words+=( '' )
@@ -145,7 +168,7 @@ print_header(){
 	done
 }
 
-# Based on caps of text, create capital, lowercase, or camel case header footer
+
 begin_end() {
 	unset text
 	for w in "$@"; do
@@ -169,13 +192,7 @@ begin_end() {
 
 
 accept_input() {
-	if [[ $# -eq 0 ]]; then
-		while read -r -s; do
-			text+=( "$REPLY" )
-		done
-	else
-		text=( "$@" )
-	fi
+echo ${#text}
 }
 
 
@@ -194,9 +211,13 @@ banner() {
 			purus placerat  quis.
 		TEXT
 		printf '%s' "$text"
-	else
-		accept_input
+	elif [[ ${#text} -eq 0 ]]; then
+		while read -r -s; do
+			text+=( "$REPLY" )
+		done
 	fi
+	#echo "TEXT = ${text[@]}"
+
 
 	# The actual signaature
 	sig=(
@@ -216,19 +237,19 @@ banner() {
 		fi
 	done
 
-	filt="$(expr length "$end_l$spc_l$spc_i$sig$spc_r$end_r")"
-
+	fill="$(expr length "$end_l$spc_l$spc_i$sig$spc_r$end_r")"
 
 	# Get remaining room for text
 	text_w=$(( width - fill ))
 
 	# Clean up text, replace new lines and tabs with spaces, squeeze spaces
 	text="$(printf '%s' "${text[*]}" | tr -s '[[:space:]]' ' ')"
-
+	
+	# debug message
+	
 	# Wrap text rows array elements
 	text="$(printf '%s' "$text" | fold -c -s --width="$text_w" -)"
-	readarray -t text < <(printf '%s' "$text") 
-
+	
 	# Determine total rows
 	if [[ "${#text[@]}" -gt "${#sig[@]}" ]]; then
 		rows="${#text[@]}"
@@ -246,18 +267,22 @@ banner() {
 	printf '%s\n' "${final[@]}" 
 }
 
-#---------------------------------  MAIN  -------------------------------------#
 
-go_getopts "$@"
+#__________________________________ MAIN ___________________________________{{{1
 
 [[ "${mode[2]}" -ge 1 ]] && set -x
+
 
 case "${mode[0]}" in
 	header)	print_header "${text[@]}" ;;
 	header_footer) begin_end "${text[@]}"; print_header "${text[@]}" ;;
-	banner) banner ;;
+	banner) banner "${text[@]}" ;;
 	*) err "ERROR: invalid mode0: ${mode[0]}" ;;
 esac
 
 unset SCRIPT snd_l end_r spc_i spc_l spc_r char width spaces_i text align mode
+
+
+
+
 
